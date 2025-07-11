@@ -1,7 +1,8 @@
 from db import app, db
+from routes import users                          
+from routes.story import story_bp               
 
-# Import your routes to register them
-from routes import users  # ✅ now this works!
+app.register_blueprint(story_bp)               
 
 if __name__ == '__main__':
     with app.app_context():
