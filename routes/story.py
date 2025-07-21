@@ -1,7 +1,7 @@
 
 from flask import Blueprint, request, jsonify
 from db import db
-from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption
+from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt
 from datetime import datetime
 import uuid
 
@@ -79,8 +79,8 @@ def save_story():
 def generate_code(prefix):
     return f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
 
-@story_bp.route("/<story_code>/quiz", methods=["POST"])
-def save_quiz(story_code):
+@story_bp.route("/<story_id>/quiz", methods=["POST"])
+def save_quiz(story_id):
     data = request.get_json()
     questions = data.get("questions", [])
 
@@ -90,7 +90,7 @@ def save_quiz(story_code):
     quiz_code = generate_code("QUIZ")
     quiz = StoryQuiz(
         quiz_code=quiz_code,
-        story_code=story_code
+        story_id=story_id
     )
     db.session.add(quiz)
 
@@ -178,3 +178,31 @@ def get_all_quizzes():
     response = list(story_map.values())
     return jsonify(response), 200
 
+@story_bp.route("/quiz-attempts", methods=["POST"])
+def create_quiz_attempt():
+    try:
+        data = request.get_json()
+
+        # Generate a unique attempt_code
+        attempt_code = "ATTEMPT-" + uuid.uuid4().hex[:6].upper()
+
+        new_attempt = StoryQuizAttempt(
+            attempt_code=attempt_code,
+            id_question=data['id_question'],
+            id_option_selected=data['id_option_selected'],
+            id_student=data['id_student'],
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+
+        db.session.add(new_attempt)
+        db.session.commit()
+
+        return jsonify({
+            "message": "Quiz attempt created successfully",
+            "attempt_code": attempt_code
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
