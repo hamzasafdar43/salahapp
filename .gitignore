@@ -6,7 +6,10 @@ env/
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
+*.swp
+.venv/
+venv/
+.env
 
 # Ignore swap/temp files
 *.swp
