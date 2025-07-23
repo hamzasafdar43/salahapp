@@ -177,32 +177,29 @@ def get_all_stories():
 @story_bp.route("/quizzes", methods=["GET"])
 def get_all_quizzes():
     quizzes = StoryQuiz.query.all()
-    story_map = {}
+    response = []
 
     for quiz in quizzes:
-        story_id = quiz.story_id
-        questions = QuizQuestion.query.filter_by(quiz_code=quiz.quiz_code).all()
+        story = Story.query.get(quiz.story_id)
 
-        for question in questions:
-            options = QuestionOption.query.filter_by(question_code=question.question_code).all()
-            option_texts = [opt.content for opt in options]
-
+        questions_data = []
+        for question in quiz.questions:
+            options = [option.content for option in question.options]
+            
             question_data = {
                 "question_code": question.question_code,
                 "content": question.content,
-                "options": option_texts,
-                "correct_answer": question.correct_option_content
+                "options": options,
+                "correct_answer": question.correct_option_content  # <-- fixed line
             }
 
-            if story_id not in story_map:
-                story_map[story_id] = {
-                    "story_code": story_id,
-                    "questions": []
-                }
+            questions_data.append(question_data)
 
-            story_map[story_id]["questions"].append(question_data)
+        response.append({
+            "story_code": story.story_code,
+            "questions": questions_data
+        })
 
-    response = list(story_map.values())
     return jsonify(response), 200
 
 
