@@ -231,3 +231,23 @@ def create_quiz_attempt():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
+@story_bp.route("/all-quiz-attempts", methods=["GET"])
+def get_quiz_attempt():
+    try:
+        attempts = StoryQuizAttempt.query.all()
+        result = []
+        for attempt in attempts:
+            result.append({
+                "id_quiz_attempt": attempt.id_quiz_attempt,
+                "attempt_code": attempt.attempt_code,
+                "question_content": attempt.question.content if attempt.question else None,
+                "option_content": attempt.selected_option.content if attempt.selected_option else None,
+                "student_name": attempt.student.name if attempt.student else None,
+                "created_at": attempt.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+        return jsonify({"quiz_attempts": result}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
