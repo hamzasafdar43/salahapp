@@ -11,12 +11,13 @@ class Story(db.Model):
     sub_title = db.Column(db.String(300))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     contents = db.relationship(
         "StoryContent",
         backref="story",
         lazy=True,
-        primaryjoin="Story.story_code==StoryContent.story_code"
+        foreign_keys="[StoryContent.story_id]",
+        primaryjoin="Story.id_story == StoryContent.story_id"
     )
 
 
@@ -25,8 +26,8 @@ class StoryContent(db.Model):
     id_story_content = db.Column(db.Integer, primary_key=True)
     content_code = db.Column(db.String(50), unique=True, nullable=False)
     page_content = db.Column(db.JSON)
-    story_code = db.Column(
-        db.String(50), db.ForeignKey("stories.story_code"), nullable=False
+    story_id = db.Column(
+        db.Integer, db.ForeignKey("stories.id_story"), nullable=False
     )
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -51,7 +52,7 @@ class QuizQuestion(db.Model):
     question_code = db.Column(db.String(50), unique=True, nullable=False)
     content = db.Column(db.Text, nullable=False)
     quiz_code = db.Column(db.String(50), db.ForeignKey("story_quizzes.quiz_code"), nullable=False)
-    correct_option_content = db.Column(db.String(255), nullable=True)  # <--- Save actual answer text here
+    correct_option_content = db.Column(db.String(255), nullable=True) 
     coins = db.Column(db.Integer, default=1)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -66,7 +67,9 @@ class QuestionOption(db.Model):
     id_option = db.Column(db.Integer, primary_key=True)
     option_code = db.Column(db.String(50), unique=True, nullable=False)
     content = db.Column(db.String(255), nullable=False)
-    question_code = db.Column(db.String(50), db.ForeignKey("quiz_questions.question_code"), nullable=False)
+
+    
+    id_question = db.Column(db.Integer, db.ForeignKey("quiz_questions.id_question"), nullable=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

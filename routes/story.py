@@ -18,35 +18,50 @@ def generate_content_code():
 @story_bp.route("/bulk", methods=["POST"])
 def save_stories_bulk():
     data = request.get_json()
+
     if not isinstance(data, list):
-        return jsonify({"message": "Invalid request format, expected a list"}), 400
+        return jsonify({"message": "Invalid request format, expected a list of stories"}), 400
 
     saved_story_codes = []
 
-    for item in data:
-        story_code = generate_story_code()
-        story = Story(
-            story_code=story_code,
-            title=item.get("title"),
-            sub_title=item.get("sub_title")
-        )
-        db.session.add(story)
-        saved_story_codes.append(story_code)
+    try:
+        for item in data:
+            story_code = generate_story_code()
 
-        for page in item.get("pages_content", []):
-            content = StoryContent(
-                content_code=generate_content_code(),
-                page_content=page,
-                story_code=story_code
+            # Create story
+            story = Story(
+                story_code=story_code,
+                title=item.get("title"),
+                sub_title=item.get("sub_title")
             )
-            db.session.add(content)
+            db.session.add(story)
+            db.session.commit()  # Commit early to get `story.id_story`
 
-    db.session.commit()
+            saved_story_codes.append(story_code)
 
-    return jsonify({
-        "message": "Stories saved successfully",
-        "saved_stories": saved_story_codes
-    }), 201
+            # Add content pages
+            for page in item.get("pages_content", []):
+                content = StoryContent(
+                    content_code=generate_content_code(),
+                    page_content=page,
+                    story_id=story.id_story
+                )
+                db.session.add(content)
+
+        db.session.commit()
+
+        return jsonify({
+            "message": "Stories and content saved successfully.",
+            "saved_stories": saved_story_codes
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "message": "An error occurred while saving stories.",
+            "error": str(e)
+        }), 500
+
 
 @story_bp.route("/specific-story", methods=["POST"])
 def save_story():
@@ -76,25 +91,34 @@ def save_story():
         "story_code": story_code
     }), 201
 
+
 def generate_code(prefix):
     return f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
 
-@story_bp.route("/<story_id>/quiz", methods=["POST"])
-def save_quiz(story_id):
+@story_bp.route("/<story_code>/quiz", methods=["POST"])
+def save_quiz(story_code):
     data = request.get_json()
-    questions = data.get("questions", [])
+    questions = data.get("quiz", [])
 
     if not questions:
         return jsonify({"message": "Questions are required"}), 400
 
+    # Lookup story by story_code to get story_id (integer)
+    story = Story.query.filter_by(story_code=story_code).first()
+    if not story:
+        return jsonify({"message": "Story not found"}), 404
+
     quiz_code = generate_code("QUIZ")
     quiz = StoryQuiz(
         quiz_code=quiz_code,
-        story_id=story_id
+        story_id=story.id_story  # Use the integer id here
     )
     db.session.add(quiz)
 
     for q in questions:
+        if not q.get("content") or not q.get("correct_option"):
+            return jsonify({"message": "Each question must have 'content' and 'correct_option'"}), 400
+
         question_code = generate_code("Q")
         option_texts = q.get("options", [])
         correct_ans = q["correct_option"]
@@ -107,13 +131,14 @@ def save_quiz(story_id):
             correct_option_content=correct_ans
         )
         db.session.add(question)
+        db.session.flush()
 
         for opt_text in option_texts:
             option_code = generate_code("OPT")
             option = QuestionOption(
                 option_code=option_code,
                 content=opt_text,
-                question_code=question_code
+                id_question=question.id_question
             )
             db.session.add(option)
 
@@ -123,6 +148,7 @@ def save_quiz(story_id):
         "message": "Quiz saved successfully",
         "quiz_code": quiz_code
     }), 201
+
 
 @story_bp.route("/stories", methods=["GET"])
 def get_all_stories():
@@ -147,13 +173,14 @@ def get_all_stories():
 
     return jsonify(response), 200
 
+
 @story_bp.route("/quizzes", methods=["GET"])
 def get_all_quizzes():
     quizzes = StoryQuiz.query.all()
     story_map = {}
 
     for quiz in quizzes:
-        story_code = quiz.story_code
+        story_id = quiz.story_id
         questions = QuizQuestion.query.filter_by(quiz_code=quiz.quiz_code).all()
 
         for question in questions:
@@ -167,16 +194,17 @@ def get_all_quizzes():
                 "correct_answer": question.correct_option_content
             }
 
-            if story_code not in story_map:
-                story_map[story_code] = {
-                    "story_code": story_code,
+            if story_id not in story_map:
+                story_map[story_id] = {
+                    "story_code": story_id,
                     "questions": []
                 }
 
-            story_map[story_code]["questions"].append(question_data)
+            story_map[story_id]["questions"].append(question_data)
 
     response = list(story_map.values())
     return jsonify(response), 200
+
 
 @story_bp.route("/quiz-attempts", methods=["POST"])
 def create_quiz_attempt():
