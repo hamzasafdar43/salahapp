@@ -1,7 +1,8 @@
 
 from flask import Blueprint, request, jsonify
 from db import db
-from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt
+from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt 
+from models.user import Student
 from datetime import datetime
 import uuid
 
@@ -98,12 +99,12 @@ def generate_code(prefix):
 @story_bp.route("/<story_code>/quiz", methods=["POST"])
 def save_quiz(story_code):
     data = request.get_json()
-    questions = data.get("quiz", [])
+    questions = data.get("questions", [])
 
     if not questions:
         return jsonify({"message": "Questions are required"}), 400
 
-    # Lookup story by story_code to get story_id (integer)
+    # Lookup story by story_code from the route
     story = Story.query.filter_by(story_code=story_code).first()
     if not story:
         return jsonify({"message": "Story not found"}), 404
@@ -111,33 +112,43 @@ def save_quiz(story_code):
     quiz_code = generate_code("QUIZ")
     quiz = StoryQuiz(
         quiz_code=quiz_code,
-        story_id=story.id_story  # Use the integer id here
+        story_id=story.id_story
     )
     db.session.add(quiz)
 
     for q in questions:
-        if not q.get("content") or not q.get("correct_option"):
-            return jsonify({"message": "Each question must have 'content' and 'correct_option'"}), 400
+        question_code = q.get("question_code")
+        content = q.get("content")
+        coins = q.get("coins", 1)
+        correct_option_code = q.get("correct_option_code")
+        options = q.get("options", [])
 
-        question_code = generate_code("Q")
-        option_texts = q.get("options", [])
-        correct_ans = q["correct_option"]
+        if not question_code or not content or not correct_option_code or not options:
+            return jsonify({
+                "message": "Each question must include 'question_code', 'content', 'correct_option_code', and 'options'"
+            }), 400
 
         question = QuizQuestion(
             question_code=question_code,
-            content=q["content"],
-            coins=q.get("coins", 1),
+            content=content,
+            coins=coins,
             quiz_code=quiz_code,
-            correct_option_content=correct_ans
+            correct_option_content=correct_option_code
         )
         db.session.add(question)
-        db.session.flush()
+        db.session.flush()  # So we can use question.id_question for options
 
-        for opt_text in option_texts:
-            option_code = generate_code("OPT")
+        for opt in options:
+            option_code = opt.get("option_code")
+            option_content = opt.get("content")
+            if not option_code or not option_content:
+                return jsonify({
+                    "message": "Each option must have 'option_code' and 'content'"
+                }), 400
+
             option = QuestionOption(
                 option_code=option_code,
-                content=opt_text,
+                content=option_content,
                 id_question=question.id_question
             )
             db.session.add(option)
@@ -148,6 +159,7 @@ def save_quiz(story_code):
         "message": "Quiz saved successfully",
         "quiz_code": quiz_code
     }), 201
+
 
 
 @story_bp.route("/stories", methods=["GET"])
@@ -203,39 +215,58 @@ def get_all_quizzes():
     return jsonify(response), 200
 
 
-@story_bp.route("/quiz-attempts", methods=["POST"])
-def create_quiz_attempts():
+
+@story_bp.route("/quiz-attempt/<string:story_code>/<string:quiz_code>/<string:student_code>", methods=["POST"])
+def create_quiz_attempts(story_code, quiz_code, student_code):
     try:
         data = request.get_json()
-        id_student = data.get("id_student")
-        attempts_data = data.get("attempts", [])
 
-        if not id_student or not attempts_data:
-            return jsonify({"error": "id_student and attempts are required"}), 400
+        if not isinstance(data, list) or not data:
+            return jsonify({"message": "Request body must be a non-empty list of attempts"}), 400
 
-        created_attempts = []
+        # Lookup student by student_code (you must have this model and relation)
+        student = Student.query.filter_by(student_code=student_code).first()
+        if not student:
+            return jsonify({"message": "Student not found"}), 404
 
-        for attempt in attempts_data:
-            attempt_code = "ATTEMPT-" + uuid.uuid4().hex[:6].upper()
+        saved_attempts = []
+
+        for attempt in data:
+            question_code = attempt.get("question_code")
+            selected_option_code = attempt.get("selected_option_code")
+
+            if not question_code or not selected_option_code:
+                return jsonify({"message": "Each attempt must have 'question_code' and 'selected_option_code'"}), 400
+
+            # Get question by question_code
+            question = QuizQuestion.query.filter_by(question_code=question_code, quiz_code=quiz_code).first()
+            if not question:
+                return jsonify({"message": f"Question not found for code: {question_code}"}), 404
+
+            # Get option by option_code and question_id
+            option = QuestionOption.query.filter_by(option_code=selected_option_code, id_question=question.id_question).first()
+            if not option:
+                return jsonify({"message": f"Option not found for code: {selected_option_code}"}), 404
+
+            attempt_code = "ATT" + uuid.uuid4().hex[:6].upper()
+
             new_attempt = StoryQuizAttempt(
                 attempt_code=attempt_code,
-                id_question=attempt['id_question'],
-                id_option_selected=attempt['id_option_selected'],
-                id_student=id_student,
+                id_question=question.id_question,
+                id_option_selected=option.id_option,
+                id_student=student.id_student,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
+
             db.session.add(new_attempt)
-            created_attempts.append({
-                "id_question": attempt['id_question'],
-                "attempt_code": attempt_code
-            })
+            saved_attempts.append(attempt_code)
 
         db.session.commit()
 
         return jsonify({
-            "message": "Quiz attempts created successfully",
-            "attempts": created_attempts
+            "message": "Quiz attempts saved",
+            "saved_attempts": saved_attempts
         }), 201
 
     except Exception as e:
@@ -243,22 +274,57 @@ def create_quiz_attempts():
         return jsonify({"error": str(e)}), 500
 
 
-@story_bp.route("/all-quiz-attempts", methods=["GET"])
-def get_quiz_attempt():
+@story_bp.route("/students/<student_code>/quiz-attempts", methods=["GET"])
+def get_student_quiz_attempts(student_code):
     try:
-        attempts = StoryQuizAttempt.query.all()
-        result = []
+        # Get student by code
+        student = Student.query.filter_by(student_code=student_code).first()
+        if not student:
+            return jsonify({"message": "Student not found"}), 404
+
+        # Get all attempts by student
+        attempts = StoryQuizAttempt.query.filter_by(id_student=student.id_student).all()
+
+        grouped = {}
+
         for attempt in attempts:
-            result.append({
-                "id_quiz_attempt": attempt.id_quiz_attempt,
+            question = attempt.question
+            selected_option = attempt.selected_option
+
+            if not question or not selected_option:
+                continue
+
+            quiz_code = question.quiz_code
+            story = Story.query.filter_by(id_story=question.quiz.story_id).first() if question.quiz else None
+            story_code = story.story_code if story else "UNKNOWN"
+
+            is_correct = question.correct_option_content == selected_option.option_code
+            coins_earned = question.coins if is_correct else 0
+
+            key = (story_code, quiz_code)
+
+            if key not in grouped:
+                grouped[key] = []
+
+            grouped[key].append({
                 "attempt_code": attempt.attempt_code,
-                "question_content": attempt.question.content if attempt.question else None,
-                "option_content": attempt.selected_option.content if attempt.selected_option else None,
-                "student_name": attempt.student.name if attempt.student else None,
-                "created_at": attempt.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                "question_code": question.question_code,
+                "question_content": question.content,
+                "selected_option_code": selected_option.option_code,
+                "is_correct": is_correct,
+                "coins_earned": coins_earned
             })
 
-        return jsonify({"quiz_attempts": result}), 200
+        result = []
+        for (story_code, quiz_code), attempts_list in grouped.items():
+            result.append({
+                "story_code": story_code,
+                "quiz_code": quiz_code,
+                "attempts": attempts_list
+            })
+
+        return jsonify(result), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
