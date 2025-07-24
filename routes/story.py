@@ -204,33 +204,44 @@ def get_all_quizzes():
 
 
 @story_bp.route("/quiz-attempts", methods=["POST"])
-def create_quiz_attempt():
+def create_quiz_attempts():
     try:
         data = request.get_json()
+        id_student = data.get("id_student")
+        attempts_data = data.get("attempts", [])
 
-        # Generate a unique attempt_code
-        attempt_code = "ATTEMPT-" + uuid.uuid4().hex[:6].upper()
+        if not id_student or not attempts_data:
+            return jsonify({"error": "id_student and attempts are required"}), 400
 
-        new_attempt = StoryQuizAttempt(
-            attempt_code=attempt_code,
-            id_question=data['id_question'],
-            id_option_selected=data['id_option_selected'],
-            id_student=data['id_student'],
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
+        created_attempts = []
 
-        db.session.add(new_attempt)
+        for attempt in attempts_data:
+            attempt_code = "ATTEMPT-" + uuid.uuid4().hex[:6].upper()
+            new_attempt = StoryQuizAttempt(
+                attempt_code=attempt_code,
+                id_question=attempt['id_question'],
+                id_option_selected=attempt['id_option_selected'],
+                id_student=id_student,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.session.add(new_attempt)
+            created_attempts.append({
+                "id_question": attempt['id_question'],
+                "attempt_code": attempt_code
+            })
+
         db.session.commit()
 
         return jsonify({
-            "message": "Quiz attempt created successfully",
-            "attempt_code": attempt_code
+            "message": "Quiz attempts created successfully",
+            "attempts": created_attempts
         }), 201
 
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
 
 @story_bp.route("/all-quiz-attempts", methods=["GET"])
 def get_quiz_attempt():
