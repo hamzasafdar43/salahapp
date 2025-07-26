@@ -13,6 +13,24 @@ def generate_story_code():
     next_id = (last_story.id_story + 1) if last_story else 1
     return f"STR{str(next_id).zfill(3)}"
 
+def generate_question_code():
+    last_story = Story.query.order_by(Story.id_story.desc()).first()
+    next_id = (last_story.id_story + 1) if last_story else 1
+    return f"Q{str(next_id).zfill(3)}"
+
+def generate_correct_option_code():
+    last_story = Story.query.order_by(Story.id_story.desc()).first()
+    next_id = (last_story.id_story + 1) if last_story else 1
+    return f"COPT{str(next_id).zfill(3)}"
+
+
+def generate_options_code():
+    last_story = Story.query.order_by(Story.id_story.desc()).first()
+    next_id = (last_story.id_story + 1) if last_story else 1
+    return f"OPT{str(next_id).zfill(3)}"
+
+
+
 def generate_content_code():
     return f"CONTENT-{uuid.uuid4().hex[:8]}"
 
@@ -96,6 +114,10 @@ def save_story():
 def generate_code(prefix):
     return f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
 
+
+def generate_code(prefix):
+    return prefix + uuid.uuid4().hex[:6].upper()
+
 @story_bp.route("/<story_code>/quiz", methods=["POST"])
 def save_quiz(story_code):
     data = request.get_json()
@@ -104,7 +126,6 @@ def save_quiz(story_code):
     if not questions:
         return jsonify({"message": "Questions are required"}), 400
 
-    # Lookup story by story_code from the route
     story = Story.query.filter_by(story_code=story_code).first()
     if not story:
         return jsonify({"message": "Story not found"}), 404
@@ -117,15 +138,15 @@ def save_quiz(story_code):
     db.session.add(quiz)
 
     for q in questions:
-        question_code = q.get("question_code")
+        question_code = generate_code("Q")
         content = q.get("content")
         coins = q.get("coins", 1)
-        correct_option_code = q.get("correct_option_code")
+        correct_option_content = q.get("correct_option")
         options = q.get("options", [])
 
-        if not question_code or not content or not correct_option_code or not options:
+        if not content or not correct_option_content or not options:
             return jsonify({
-                "message": "Each question must include 'question_code', 'content', 'correct_option_code', and 'options'"
+                "message": "Each question must include 'content', 'correct_option', and 'options'"
             }), 400
 
         question = QuizQuestion(
@@ -133,22 +154,16 @@ def save_quiz(story_code):
             content=content,
             coins=coins,
             quiz_code=quiz_code,
-            correct_option_content=correct_option_code
+            correct_option_content=correct_option_content
         )
         db.session.add(question)
-        db.session.flush()  # So we can use question.id_question for options
+        db.session.flush()  # Required to get question.id_question
 
-        for opt in options:
-            option_code = opt.get("option_code")
-            option_content = opt.get("content")
-            if not option_code or not option_content:
-                return jsonify({
-                    "message": "Each option must have 'option_code' and 'content'"
-                }), 400
-
+        for opt_content in options:
+            option_code = generate_code("OPT")
             option = QuestionOption(
                 option_code=option_code,
-                content=option_content,
+                content=opt_content,
                 id_question=question.id_question
             )
             db.session.add(option)
@@ -159,7 +174,6 @@ def save_quiz(story_code):
         "message": "Quiz saved successfully",
         "quiz_code": quiz_code
     }), 201
-
 
 
 @story_bp.route("/stories", methods=["GET"])
@@ -320,6 +334,7 @@ def get_student_quiz_attempts(student_code):
                 "question_code": question.question_code,
                 "question_content": question.content,
                 "selected_option_code": selected_option.option_code,
+                "selected_option_content": selected_option.content,
                 "is_correct": is_correct,
                 "coins_earned": coins_earned
             })
@@ -336,4 +351,5 @@ def get_student_quiz_attempts(student_code):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
