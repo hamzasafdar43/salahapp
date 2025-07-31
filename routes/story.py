@@ -200,41 +200,87 @@ def get_all_stories():
     return jsonify(response), 200
 
 
-@story_bp.route("/<string:story_code>/quiz", methods=["GET"])
-def get_quiz_by_story_code(story_code):
+# @story_bp.route("/<string:story_code>/quiz", methods=["GET"])
+# def get_quiz_by_story_code(story_code):
+#     story = Story.query.filter_by(story_code=story_code).first()
+
+#     if not story:
+#         return jsonify({"error": "Story not found"}), 404
+
+#     quiz = StoryQuiz.query.filter_by(story_id=story.id_story).first()
+
+#     if not quiz:
+#         return jsonify({"error": "Quiz not found for this story"}), 404
+
+#     questions_data = []
+#     for question in quiz.questions:
+#         options = []
+#         for option in question.options:
+#             options.append({
+#                 "option_code": option.option_code,
+#                 "content": option.content
+#             })
+
+#         question_data = {
+#             "question_code": question.question_code,
+#             "content": question.content,
+#             "coins": question.coins,
+#             "correct_option_code": question.correct_option_content,
+#             "options": options
+#         }
+
+#         questions_data.append(question_data)
+
+#     return jsonify({
+#         "quiz_code": quiz.quiz_code,
+#         "questions": questions_data
+#     }), 200
+
+
+@story_bp.route("/<string:story_code>/quizzes", methods=["GET"])
+def get_all_quizzes_by_story_code(story_code):
     story = Story.query.filter_by(story_code=story_code).first()
 
     if not story:
         return jsonify({"error": "Story not found"}), 404
 
-    quiz = StoryQuiz.query.filter_by(story_id=story.id_story).first()
+    quizzes = StoryQuiz.query.filter_by(story_id=story.id_story).all()
 
-    if not quiz:
-        return jsonify({"error": "Quiz not found for this story"}), 404
+    if not quizzes:
+        return jsonify({"error": "No quizzes found for this story"}), 404
 
-    questions_data = []
-    for question in quiz.questions:
-        options = []
-        for option in question.options:
-            options.append({
-                "option_code": option.option_code,
-                "content": option.content
-            })
+    quizzes_data = []
 
-        question_data = {
-            "question_code": question.question_code,
-            "content": question.content,
-            "coins": question.coins,
-            "correct_option_code": question.correct_option_content,
-            "options": options
+    for quiz in quizzes:
+        questions_data = []
+
+        for question in quiz.questions:
+            options = []
+            for option in question.options:
+                options.append({
+                    "option_code": option.option_code,
+                    "content": option.content
+                })
+
+            question_data = {
+                "question_code": question.question_code,
+                "content": question.content,
+                "coins": question.coins,
+                "correct_option_code": question.correct_option_content,
+                "options": options
+            }
+
+            questions_data.append(question_data)
+
+        quiz_data = {
+            "quiz_code": quiz.quiz_code,
+            "questions": questions_data
         }
 
-        questions_data.append(question_data)
+        quizzes_data.append(quiz_data)
 
-    return jsonify({
-        "quiz_code": quiz.quiz_code,
-        "questions": questions_data
-    }), 200
+    return jsonify(quizzes_data), 200
+
 
 
 
