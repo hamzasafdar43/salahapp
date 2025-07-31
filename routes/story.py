@@ -256,17 +256,29 @@ def get_all_quizzes_by_story_code(story_code):
 
         for question in quiz.questions:
             options = []
+            correct_option_text = None
+            correct_option_code = None
+
             for option in question.options:
                 options.append({
                     "option_code": option.option_code,
                     "content": option.content
                 })
 
+                # Match by option code or content, depending on what's saved
+                if (
+                    option.option_code == question.correct_option_content or 
+                    option.content == question.correct_option_content
+                ):
+                    correct_option_code = option.option_code
+                    correct_option_text = option.content
+
             question_data = {
                 "question_code": question.question_code,
                 "content": question.content,
                 "coins": question.coins,
-                "correct_option_code": question.correct_option_content,
+                "correct_option_code": correct_option_code,
+                "correct_option": correct_option_text,
                 "options": options
             }
 
@@ -280,6 +292,7 @@ def get_all_quizzes_by_story_code(story_code):
         quizzes_data.append(quiz_data)
 
     return jsonify(quizzes_data), 200
+
 
 
 
