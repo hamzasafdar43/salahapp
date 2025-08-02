@@ -321,11 +321,7 @@ def get_student_quiz_attempts(student_code):
             return jsonify({"message": "Student not found"}), 404
 
         attempts = StoryQuizAttempt.query.filter_by(id_student=student.id_student).all()
-
-    
         result = []
-
-       
         grouped = {}
 
         for attempt in attempts:
@@ -338,13 +334,13 @@ def get_student_quiz_attempts(student_code):
             quiz_code = question.quiz_code
             story = Story.query.filter_by(id_story=question.quiz.story_id).first() if question.quiz else None
             story_code = story.story_code if story else "UNKNOWN"
+            story_updated_at = story.updated_at.strftime('%Y-%m-%d %H:%M:%S') if story and story.updated_at else None
 
             is_correct = question.correct_option_content == selected_option.option_code
             coins_earned = question.coins if is_correct else 0
 
-            key = (story_code, quiz_code)
+            key = (story_code, quiz_code, story_updated_at)
 
-          
             attempt_data = {
                 "attempt_code": attempt.attempt_code,
                 "question_code": question.question_code,
@@ -352,7 +348,9 @@ def get_student_quiz_attempts(student_code):
                 "selected_option_code": selected_option.option_code,
                 "selected_option_content": selected_option.content,
                 "is_correct": is_correct,
-                "coins_earned": coins_earned
+                "coins_earned": coins_earned,
+                "created_at": attempt.created_at.strftime('%Y-%m-%d %H:%M:%S') if attempt.created_at else None,
+                "updated_at": attempt.updated_at.strftime('%Y-%m-%d %H:%M:%S') if attempt.updated_at else None
             }
 
             if key not in grouped:
@@ -368,7 +366,7 @@ def get_student_quiz_attempts(student_code):
             if not placed:
                 grouped[key].append([attempt_data])
 
-        for (story_code, quiz_code), attempt_groups in grouped.items():
+        for (story_code, quiz_code, story_updated_at), attempt_groups in grouped.items():
             for attempts_list in attempt_groups:
                 result.append({
                     "story_code": story_code,
@@ -380,3 +378,4 @@ def get_student_quiz_attempts(student_code):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
