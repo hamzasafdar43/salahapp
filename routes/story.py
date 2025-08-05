@@ -336,7 +336,15 @@ def get_student_quiz_attempts(student_code):
             story_code = story.story_code if story else "UNKNOWN"
             story_updated_at = story.updated_at.strftime('%Y-%m-%d %H:%M:%S') if story and story.updated_at else None
 
-            is_correct = question.correct_option_content == selected_option.option_code
+            # ✅ FIX: get correct_option_code from QuestionOption instances
+            correct_option_code = None
+            if hasattr(question, 'options') and question.options:
+                for opt in question.options:
+                    if opt.content == question.correct_option_content:
+                        correct_option_code = opt.option_code
+                        break
+
+            is_correct = question.correct_option_content == selected_option.content
             coins_earned = question.coins if is_correct else 0
 
             key = (story_code, quiz_code, story_updated_at)
@@ -347,6 +355,8 @@ def get_student_quiz_attempts(student_code):
                 "question_content": question.content,
                 "selected_option_code": selected_option.option_code,
                 "selected_option_content": selected_option.content,
+                "correct_option_code": correct_option_code,
+                "correct_option_content": question.correct_option_content,
                 "is_correct": is_correct,
                 "coins_earned": coins_earned,
                 "created_at": attempt.created_at.strftime('%Y-%m-%d %H:%M:%S') if attempt.created_at else None,
@@ -371,6 +381,7 @@ def get_student_quiz_attempts(student_code):
                 result.append({
                     "story_code": story_code,
                     "quiz_code": quiz_code,
+                    "story_updated_at": story_updated_at,
                     "attempts": attempts_list
                 })
 
@@ -378,4 +389,3 @@ def get_student_quiz_attempts(student_code):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
