@@ -89,4 +89,15 @@ class StoryQuizAttempt(db.Model):
     selected_option = db.relationship("QuestionOption")
     student = db.relationship("Student")
 
-    
+
+class StoryReward(db.Model):
+    __tablename__ = 'story_reward'
+    id_story_reward = db.Column(db.Integer, primary_key=True)
+    reward_code = db.Column(db.String(50), unique=True, nullable=False)
+    id_story = db.Column(db.Integer, db.ForeignKey('stories.id_story'), nullable=False)  # <-- here!
+    coins_required = db.Column(db.Integer, nullable=False)
+    is_locked = db.Column(db.Boolean, default=True)
+    reward_image = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    story = db.relationship('Story', backref=db.backref('rewards', lazy=True))
