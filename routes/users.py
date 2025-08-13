@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from db import db
 from models.user import Student
-from models.story import StoryReward , StoryQuizAttempt
+from models.story import  StoryQuizAttempt
 
 users = Blueprint('users', __name__)
 
@@ -92,9 +92,6 @@ def delete_student(student_code):
         return jsonify({"error": "Student not found"}), 404
 
     try:
-
-        StoryReward.query.filter_by(student_code=student_code).delete()
-
         StoryQuizAttempt.query.filter_by(id_student=student.id_student).delete()
 
         db.session.delete(student)
