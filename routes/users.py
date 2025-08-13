@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from db import db
 from models.user import Student
+from models.story import StoryReward , StoryQuizAttempt
 
 users = Blueprint('users', __name__)
 
@@ -81,3 +82,25 @@ def get_all_students():
         })
 
     return jsonify(students_list), 200
+
+
+@users.route('/delete_student/<string:student_code>', methods=['DELETE'])
+def delete_student(student_code):
+    
+    student = Student.query.filter_by(student_code=student_code).first()
+    if not student:
+        return jsonify({"error": "Student not found"}), 404
+
+    try:
+
+        StoryReward.query.filter_by(student_code=student_code).delete()
+
+        StoryQuizAttempt.query.filter_by(id_student=student.id_student).delete()
+
+        db.session.delete(student)
+        db.session.commit()
+        return jsonify({"message": f"Student '{student_code}' and related data deleted successfully"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
