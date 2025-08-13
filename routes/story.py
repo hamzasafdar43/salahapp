@@ -1,37 +1,16 @@
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify , current_app
 from db import db
-from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt 
+from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt , StoryReward
 from models.user import Student
 from datetime import datetime
 import uuid
+from heplers.generate_code import generate_reward_code , generate_story_code , generate_content_code , generate_code
+from heplers.image_upload_code import save_uploaded_file
+
+
 
 story_bp = Blueprint("story_bp", __name__, url_prefix="/api/stories")
-
-def generate_story_code():
-    last_story = Story.query.order_by(Story.id_story.desc()).first()
-    next_id = (last_story.id_story + 1) if last_story else 1
-    return f"STR{str(next_id).zfill(3)}"
-
-def generate_question_code():
-    last_story = Story.query.order_by(Story.id_story.desc()).first()
-    next_id = (last_story.id_story + 1) if last_story else 1
-    return f"Q{str(next_id).zfill(3)}"
-
-def generate_correct_option_code():
-    last_story = Story.query.order_by(Story.id_story.desc()).first()
-    next_id = (last_story.id_story + 1) if last_story else 1
-    return f"COPT{str(next_id).zfill(3)}"
-
-
-def generate_options_code():
-    last_story = Story.query.order_by(Story.id_story.desc()).first()
-    next_id = (last_story.id_story + 1) if last_story else 1
-    return f"OPT{str(next_id).zfill(3)}"
-
-
-def generate_content_code():
-    return f"CONTENT-{uuid.uuid4().hex[:8]}"
 
 
 @story_bp.route("/bulk", methods=["POST"])
@@ -109,14 +88,6 @@ def save_story():
         "message": "Story saved successfully",
         "story_code": story_code
     }), 201
-
-
-def generate_code(prefix):
-    return f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
-
-
-def generate_code(prefix):
-    return prefix + uuid.uuid4().hex[:6].upper()
 
 
 @story_bp.route("/<story_code>/quiz", methods=["POST"])
@@ -389,3 +360,74 @@ def get_student_quiz_attempts(student_code):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@story_bp.route("/reward/<string:story_code>", methods=["POST"])
+def create_reward(story_code):
+    story = Story.query.filter_by(story_code=story_code).first()
+    if not story:
+        return jsonify({"error": "Story not found"}), 404
+
+    coins = request.form.get('coins')
+    if coins is None:
+        return jsonify({"error": "Coins field is required"}), 400
+
+    image_file = request.files.get('image')
+    if not image_file:
+        return jsonify({"error": "Image file is required"}), 400
+
+    try:
+        image_path = save_uploaded_file(image_file)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    reward_code = generate_reward_code()
+
+    new_reward = StoryReward(
+        reward_code=reward_code,
+        id_story=story.id_story,
+        coins_required=coins,
+        reward_image=image_path,
+        is_locked=True
+    )
+    db.session.add(new_reward)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Reward created",
+        "reward_code": reward_code,
+        "story_code": story_code,
+        "coins": coins,
+        "reward_image": image_path,
+        "status": "isLocked"
+    }), 201
+
+
+@story_bp.route('/rewards', methods=['GET'])
+def get_all_rewards():
+    rewards = StoryReward.query.all()
+    result = []
+    for r in rewards:
+        result.append({
+            "reward_code": r.reward_code,
+            "coins_required": r.coins_required,
+            "is_locked": r.is_locked,
+            "story_code": r.story.story_code,
+            "title": r.story.title,
+            "sub_title": r.story.sub_title,
+            "reward_image":r.reward_image
+        })
+    return jsonify(result)
+
+
+@story_bp.route('/buyreward/<string:reward_code>', methods=['POST'])
+def buy_reward(reward_code):
+    reward = StoryReward.query.filter_by(reward_code=reward_code).first()
+    if not reward:
+        return jsonify({"error": "Reward not found"}), 404
+    if not reward.is_locked:
+        return jsonify({"message": "Reward already unlocked"}), 200
+    
+    reward.is_locked = False
+    db.session.commit()
+    return jsonify({"message": f"Reward {reward_code} unlocked successfully"})
