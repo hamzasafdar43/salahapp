@@ -101,3 +101,14 @@ class StoryReward(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     story = db.relationship('Story', backref=db.backref('rewards', lazy=True))
+
+
+class PurchasedReward(db.Model):
+    __tablename__ = 'purchased_reward'
+    id = db.Column(db.Integer, primary_key=True)
+    student_code = db.Column(db.String(50), nullable=False)
+    reward_code = db.Column(db.String(50), nullable=False)
+    id_story = db.Column(db.Integer, nullable=False)
+    coins_required = db.Column(db.Integer, nullable=False)
+    reward_image = db.Column(db.String(255), nullable=True)
+    purchased_at = db.Column(db.DateTime, default=datetime.utcnow)    

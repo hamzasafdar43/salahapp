@@ -1,13 +1,12 @@
 
 from flask import Blueprint, request, jsonify , current_app
 from db import db
-from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt , StoryReward
+from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt , StoryReward , PurchasedReward
 from models.user import Student
 from datetime import datetime
 import uuid
 from heplers.generate_code import generate_reward_code , generate_story_code , generate_content_code , generate_code
 from heplers.image_upload_code import save_uploaded_file
-
 
 
 story_bp = Blueprint("story_bp", __name__, url_prefix="/api/stories")
@@ -420,14 +419,57 @@ def get_all_rewards():
     return jsonify(result)
 
 
-@story_bp.route('/buyreward/<string:reward_code>', methods=['POST'])
-def buy_reward(reward_code):
+@story_bp.route('/buyreward/<string:reward_code>/<string:student_code>', methods=['POST'])
+def buy_reward(reward_code, student_code):
+    data = request.get_json()
+    coins = data.get('coins')
+
     reward = StoryReward.query.filter_by(reward_code=reward_code).first()
     if not reward:
         return jsonify({"error": "Reward not found"}), 404
-    if not reward.is_locked:
-        return jsonify({"message": "Reward already unlocked"}), 200
+
+    if coins is None:
+        return jsonify({"error": "Coins value is required"}), 400
+
+    if coins < reward.coins_required:
+        return jsonify({"message": "Your coins are less for buying this reward"}), 400
+
     
-    reward.is_locked = False
+    purchased = PurchasedReward.query.filter_by(
+        student_code=student_code, reward_code=reward_code
+    ).first()
+    if purchased:
+        return jsonify({"message": "Reward already unlocked for this student"}), 200
+
+    
+    purchased = PurchasedReward(
+        student_code=student_code,
+        reward_code=reward.reward_code,
+        id_story=reward.id_story,
+        coins_required=reward.coins_required,
+        reward_image=reward.reward_image
+    )
+    db.session.add(purchased)
     db.session.commit()
-    return jsonify({"message": f"Reward {reward_code} unlocked successfully"})
+
+    return jsonify({"message": f"Reward {reward_code} unlocked successfully for this student"}), 200
+
+
+@story_bp.route('/studentrewards/<string:student_code>', methods=['GET'])
+def student_rewards(student_code):
+    all_rewards = StoryReward.query.all()
+    purchased = PurchasedReward.query.filter_by(student_code=student_code).all()
+    purchased_codes = [r.reward_code for r in purchased]
+
+    result = []
+    for reward in all_rewards:
+        reward_status = "unlocked" if reward.reward_code in purchased_codes else "locked"
+        result.append({
+            "reward_code": reward.reward_code,
+            "coins_required": reward.coins_required,
+            "reward_image": reward.reward_image,
+            "status": reward_status
+        })
+    return jsonify(result)
+
+   
