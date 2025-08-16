@@ -402,23 +402,6 @@ def create_reward(story_code):
     }), 201
 
 
-@story_bp.route('/rewards', methods=['GET'])
-def get_all_rewards():
-    rewards = StoryReward.query.all()
-    result = []
-    for r in rewards:
-        result.append({
-            "reward_code": r.reward_code,
-            "coins_required": r.coins_required,
-            "is_locked": r.is_locked,
-            "story_code": r.story.story_code,
-            "title": r.story.title,
-            "sub_title": r.story.sub_title,
-            "reward_image":r.reward_image
-        })
-    return jsonify(result)
-
-
 @story_bp.route('/buyreward/<string:reward_code>/<string:student_code>', methods=['POST'])
 def buy_reward(reward_code, student_code):
     data = request.get_json()
@@ -460,13 +443,16 @@ def student_rewards(student_code):
     all_rewards = StoryReward.query.all()
     purchased = PurchasedReward.query.filter_by(student_code=student_code).all()
     purchased_codes = [r.reward_code for r in purchased]
+   
 
     result = []
     for reward in all_rewards:
         reward_status = "unlocked" if reward.reward_code in purchased_codes else "locked"
+        story = Story.query.filter_by(id_story=reward.id_story).first()
         result.append({
             "reward_code": reward.reward_code,
             "coins_required": reward.coins_required,
+            "story_code": story.story_code if story else None,
             "reward_image": reward.reward_image,
             "status": reward_status
         })
