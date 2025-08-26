@@ -9,8 +9,11 @@ class Story(db.Model):
     story_code = db.Column(db.String(50), unique=True, nullable=False)
     title = db.Column(db.String(200), nullable=False)
     sub_title = db.Column(db.String(300))
+    status = db.Column(db.String(10), default='locked', nullable=False)
+    launch_text = db.Column(db.String(50), default='unlaunch', nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
     contents = db.relationship(
         "StoryContent",
@@ -112,3 +115,16 @@ class PurchasedReward(db.Model):
     coins_required = db.Column(db.Integer, nullable=False)
     reward_image = db.Column(db.String(255), nullable=True)
     purchased_at = db.Column(db.DateTime, default=datetime.utcnow)    
+
+
+class Translation(db.Model):
+    __tablename__ = "translations"
+
+    id_translation = db.Column(db.Integer, primary_key=True)
+    id_reference = db.Column(db.Integer, nullable=False)   
+    table_name = db.Column(db.String(50), nullable=False) 
+    column_name = db.Column(db.String(50), nullable=False) 
+    lang = db.Column(db.String(10), nullable=False)
+    translation = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

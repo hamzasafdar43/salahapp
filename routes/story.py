@@ -1,7 +1,7 @@
 
 from flask import Blueprint, request, jsonify , current_app
 from db import db
-from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt , StoryReward , PurchasedReward
+from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt , StoryReward , PurchasedReward , Translation
 from models.user import Student
 from datetime import datetime
 import uuid
@@ -11,6 +11,8 @@ from heplers.image_upload_code import save_uploaded_file
 
 story_bp = Blueprint("story_bp", __name__, url_prefix="/api/stories")
 
+
+# *********************************** Stories ***************************************
 
 @story_bp.route("/bulk", methods=["POST"])
 def save_stories_bulk():
@@ -89,6 +91,76 @@ def save_story():
     }), 201
 
 
+@story_bp.route('/unlock_story', methods=['POST'])
+def unlock_story():
+    data = request.get_json()
+    story_code = data.get('story_code')
+
+    if not story_code:
+        return jsonify({"error": "story_code is required"}), 400
+
+    story = Story.query.filter_by(story_code=story_code).first()
+    if not story:
+        return jsonify({"error": "Story not found"}), 404
+
+    # Update story status
+    story.status = 'unlocked'
+    story.launch_text = "launched"
+    db.session.commit()
+    
+
+    return jsonify({"message": f"Story {story_code} unlocked successfully", "status": story.status})
+
+@story_bp.route('/launch_story/<story_code>', methods=['POST'])
+def launch_story(story_code):
+    data = request.get_json()
+    text = data.get('text')  # example: "Coming Soon"
+
+    if not text:
+        return jsonify({"error": "text is required in body"}), 400
+
+    story = Story.query.filter_by(story_code=story_code).first()
+    if not story:
+        return jsonify({"error": "Story not found"}), 404
+
+    # Update launch_text
+    story.launch_text = text
+    db.session.commit()
+
+    return jsonify({
+        "story_code": story.story_code,
+        "launch_text": story.launch_text
+    })
+
+
+@story_bp.route("/stories", methods=["GET"])
+def get_all_stories():
+    stories = Story.query.all()
+    response = []
+
+    for story in stories:
+        pages = []
+        for content in story.contents:
+            if isinstance(content.page_content, list):
+                pages.extend(content.page_content)
+            else:
+                pages.append(content.page_content)
+
+        story_data = {
+            "story_code": story.story_code,
+            "title": story.title,
+            "sub_title": story.sub_title,
+            "status":story.status,
+            "story_lunch" : story.launch_text,
+            "pages_content": pages
+        }
+        response.append(story_data)
+
+    return jsonify(response), 200
+
+
+# *********************************** Story Quiz ***************************************
+
 @story_bp.route("/<story_code>/quiz", methods=["POST"])
 def save_quiz(story_code):
     data = request.get_json()
@@ -145,30 +217,6 @@ def save_quiz(story_code):
         "message": "Quiz saved successfully",
         "quiz_code": quiz_code
     }), 201
-
-
-@story_bp.route("/stories", methods=["GET"])
-def get_all_stories():
-    stories = Story.query.all()
-    response = []
-
-    for story in stories:
-        pages = []
-        for content in story.contents:
-            if isinstance(content.page_content, list):
-                pages.extend(content.page_content)
-            else:
-                pages.append(content.page_content)
-
-        story_data = {
-            "story_code": story.story_code,
-            "title": story.title,
-            "sub_title": story.sub_title,
-            "pages_content": pages
-        }
-        response.append(story_data)
-
-    return jsonify(response), 200
 
 
 @story_bp.route("/<string:story_code>/quizzes", methods=["GET"])
@@ -360,6 +408,7 @@ def get_student_quiz_attempts(student_code):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# *********************************** Story Reward  ***************************************
 
 @story_bp.route("/reward/<string:story_code>", methods=["POST"])
 def create_reward(story_code):
@@ -458,4 +507,58 @@ def student_rewards(student_code):
         })
     return jsonify(result)
 
-   
+# *********************************** Translation ***************************************
+
+@story_bp.route("/translations", methods=["POST"])
+def save_translation():
+    try:
+        data = request.get_json()
+
+        id_reference = data.get("id_reference")
+        table_name = data.get("table_name")
+        column_name = data.get("column_name")
+        lang = data.get("lang")
+        translation_text = data.get("translation")
+
+        if not id_reference or not table_name or not column_name or not lang or not translation_text:
+            return jsonify({"error": "id_reference, table_name, column_name, lang, and translation are required"}), 400
+
+        # Check if translation already exists
+        existing = Translation.query.filter_by(
+            id_reference=id_reference,
+            table_name=table_name,
+            column_name=column_name,
+            lang=lang
+        ).first()
+
+        if existing:
+            existing.translation = translation_text
+            existing.updated_at = datetime.utcnow()
+            status = "updated"
+        else:
+            new_translation = Translation(
+                id_reference=id_reference,
+                table_name=table_name,
+                column_name=column_name,
+                lang=lang,
+                translation=translation_text
+            )
+            db.session.add(new_translation)
+            status = "saved"
+
+        db.session.commit()
+
+        return jsonify({
+            "message": f"Translation {status} successfully",
+            "data": {
+                "id_reference": id_reference,
+                "table_name": table_name,
+                "column_name": column_name,
+                "lang": lang,
+                "translation": translation_text
+            }
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
