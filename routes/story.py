@@ -502,6 +502,9 @@ def student_rewards(student_code):
             "reward_code": reward.reward_code,
             "coins_required": reward.coins_required,
             "story_code": story.story_code if story else None,
+            "story_status" : story.status,
+            "story_launch" : story.launch_text,
+            "story_title" : story.title ,
             "reward_image": reward.reward_image,
             "status": reward_status
         })
