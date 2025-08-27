@@ -1,12 +1,18 @@
 from flask import Blueprint, request, jsonify
 from db import db
 from models.user import Student
+from models.story import  StoryQuizAttempt , PurchasedReward
+from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import text
 
 users = Blueprint('users', __name__)
 
 @users.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
+    name = data.get("name")
+    email = data.get("email")
+    password = data.get("password")
 
     last_student = Student.query.order_by(Student.id_student.desc()).first()
     next_id = 1 if not last_student else last_student.id_student + 1
@@ -14,12 +20,15 @@ def register():
 
     if Student.query.filter_by(email=data['email']).first():
         return jsonify({'error': 'Email already registered'}), 400
+    
+    hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
+    
 
     student = Student(
         student_code=student_code,
-        name=data['name'],
-        email=data['email'],
-        password=data['password']
+        name=name, 
+        email=email,
+        password=hashed_password
     )
 
     db.session.add(student)
@@ -51,8 +60,8 @@ def login():
 
     student = Student.query.filter_by(email=email).first()
 
-    if not student or student.password != password:
-        return jsonify({'error': 'Invalid email or password'}), 401
+    if not student or not check_password_hash(student.password, password):
+        return jsonify({"error": "Invalid email or password"}), 401
 
     return jsonify({
         'message': 'Login successful',
@@ -81,3 +90,45 @@ def get_all_students():
         })
 
     return jsonify(students_list), 200
+
+
+@users.route('/delete_student/<string:student_code>', methods=['DELETE'])
+def delete_student(student_code):
+    
+    student = Student.query.filter_by(student_code=student_code).first()
+    if not student:
+        return jsonify({"error": "Student not found"}), 404
+   
+    
+    try:
+        StoryQuizAttempt.query.filter_by(id_student=student.id_student).delete()
+        PurchasedReward.query.filter_by(student_code=student_code).delete()
+
+        db.session.delete(student)
+        db.session.commit()
+        return jsonify({"message": f"Student '{student_code}' and related data deleted successfully"}), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+    
+
+
+@users.route('/surahs', methods=['GET'])
+def get_surahs():
+    sql = text("SELECT * FROM surahs")
+    result = db.session.execute(sql).mappings()  # <-- converts rows to dict-like
+    surahs = [dict(row) for row in result]       # now this works safely
+    return jsonify(surahs)
+
+@users.route("/surah/<int:number>", methods=["GET"])
+def get_surah(number):
+    sql = text("""
+        SELECT id, number_in_surah, text, surah_id 
+        FROM ayahs 
+        WHERE surah_id = :number 
+        ORDER BY number_in_surah
+    """)
+    result = db.session.execute(sql, {"number": number}).mappings()
+    ayat_list = [dict(row) for row in result]
+    return jsonify(ayat_list)

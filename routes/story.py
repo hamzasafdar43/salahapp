@@ -1,38 +1,18 @@
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify , current_app
 from db import db
-from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt 
+from models.story import Story, StoryContent, StoryQuiz, QuizQuestion, QuestionOption , StoryQuizAttempt , StoryReward , PurchasedReward , Translation
 from models.user import Student
 from datetime import datetime
 import uuid
+from heplers.generate_code import generate_reward_code , generate_story_code , generate_content_code , generate_code
+from heplers.image_upload_code import save_uploaded_file
+
 
 story_bp = Blueprint("story_bp", __name__, url_prefix="/api/stories")
 
-def generate_story_code():
-    last_story = Story.query.order_by(Story.id_story.desc()).first()
-    next_id = (last_story.id_story + 1) if last_story else 1
-    return f"STR{str(next_id).zfill(3)}"
 
-def generate_question_code():
-    last_story = Story.query.order_by(Story.id_story.desc()).first()
-    next_id = (last_story.id_story + 1) if last_story else 1
-    return f"Q{str(next_id).zfill(3)}"
-
-def generate_correct_option_code():
-    last_story = Story.query.order_by(Story.id_story.desc()).first()
-    next_id = (last_story.id_story + 1) if last_story else 1
-    return f"COPT{str(next_id).zfill(3)}"
-
-
-def generate_options_code():
-    last_story = Story.query.order_by(Story.id_story.desc()).first()
-    next_id = (last_story.id_story + 1) if last_story else 1
-    return f"OPT{str(next_id).zfill(3)}"
-
-
-def generate_content_code():
-    return f"CONTENT-{uuid.uuid4().hex[:8]}"
-
+# *********************************** Stories ***************************************
 
 @story_bp.route("/bulk", methods=["POST"])
 def save_stories_bulk():
@@ -111,13 +91,75 @@ def save_story():
     }), 201
 
 
-def generate_code(prefix):
-    return f"{prefix}-{uuid.uuid4().hex[:6].upper()}"
+@story_bp.route('/unlock_story', methods=['POST'])
+def unlock_story():
+    data = request.get_json()
+    story_code = data.get('story_code')
+
+    if not story_code:
+        return jsonify({"error": "story_code is required"}), 400
+
+    story = Story.query.filter_by(story_code=story_code).first()
+    if not story:
+        return jsonify({"error": "Story not found"}), 404
+
+    # Update story status
+    story.status = 'unlocked'
+    story.launch_text = "launched"
+    db.session.commit()
+    
+
+    return jsonify({"message": f"Story {story_code} unlocked successfully", "status": story.status})
+
+@story_bp.route('/launch_story/<story_code>', methods=['POST'])
+def launch_story(story_code):
+    data = request.get_json()
+    text = data.get('text')  # example: "Coming Soon"
+
+    if not text:
+        return jsonify({"error": "text is required in body"}), 400
+
+    story = Story.query.filter_by(story_code=story_code).first()
+    if not story:
+        return jsonify({"error": "Story not found"}), 404
+
+    # Update launch_text
+    story.launch_text = text
+    db.session.commit()
+
+    return jsonify({
+        "story_code": story.story_code,
+        "launch_text": story.launch_text
+    })
 
 
-def generate_code(prefix):
-    return prefix + uuid.uuid4().hex[:6].upper()
+@story_bp.route("/stories", methods=["GET"])
+def get_all_stories():
+    stories = Story.query.all()
+    response = []
 
+    for story in stories:
+        pages = []
+        for content in story.contents:
+            if isinstance(content.page_content, list):
+                pages.extend(content.page_content)
+            else:
+                pages.append(content.page_content)
+
+        story_data = {
+            "story_code": story.story_code,
+            "title": story.title,
+            "sub_title": story.sub_title,
+            "status":story.status,
+            "story_lunch" : story.launch_text,
+            "pages_content": pages
+        }
+        response.append(story_data)
+
+    return jsonify(response), 200
+
+
+# *********************************** Story Quiz ***************************************
 
 @story_bp.route("/<story_code>/quiz", methods=["POST"])
 def save_quiz(story_code):
@@ -175,30 +217,6 @@ def save_quiz(story_code):
         "message": "Quiz saved successfully",
         "quiz_code": quiz_code
     }), 201
-
-
-@story_bp.route("/stories", methods=["GET"])
-def get_all_stories():
-    stories = Story.query.all()
-    response = []
-
-    for story in stories:
-        pages = []
-        for content in story.contents:
-            if isinstance(content.page_content, list):
-                pages.extend(content.page_content)
-            else:
-                pages.append(content.page_content)
-
-        story_data = {
-            "story_code": story.story_code,
-            "title": story.title,
-            "sub_title": story.sub_title,
-            "pages_content": pages
-        }
-        response.append(story_data)
-
-    return jsonify(response), 200
 
 
 @story_bp.route("/<string:story_code>/quizzes", methods=["GET"])
@@ -388,4 +406,159 @@ def get_student_quiz_attempts(student_code):
         return jsonify(result), 200
 
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# *********************************** Story Reward  ***************************************
+
+@story_bp.route("/reward/<string:story_code>", methods=["POST"])
+def create_reward(story_code):
+    story = Story.query.filter_by(story_code=story_code).first()
+    if not story:
+        return jsonify({"error": "Story not found"}), 404
+
+    coins = request.form.get('coins')
+    if coins is None:
+        return jsonify({"error": "Coins field is required"}), 400
+
+    image_file = request.files.get('image')
+    if not image_file:
+        return jsonify({"error": "Image file is required"}), 400
+
+    try:
+        image_path = save_uploaded_file(image_file)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    reward_code = generate_reward_code()
+
+    new_reward = StoryReward(
+        reward_code=reward_code,
+        id_story=story.id_story,
+        coins_required=coins,
+        reward_image=image_path,
+        is_locked=True
+    )
+    db.session.add(new_reward)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Reward created",
+        "reward_code": reward_code,
+        "story_code": story_code,
+        "coins": coins,
+        "reward_image": image_path,
+        "status": "isLocked"
+    }), 201
+
+
+@story_bp.route('/buyreward/<string:reward_code>/<string:student_code>', methods=['POST'])
+def buy_reward(reward_code, student_code):
+    data = request.get_json()
+    coins = data.get('coins')
+
+    reward = StoryReward.query.filter_by(reward_code=reward_code).first()
+    if not reward:
+        return jsonify({"error": "Reward not found"}), 404
+
+    if coins is None:
+        return jsonify({"error": "Coins value is required"}), 400
+
+    if coins < reward.coins_required:
+        return jsonify({"message": "Your coins are less for buying this reward"}), 400
+
+    
+    purchased = PurchasedReward.query.filter_by(
+        student_code=student_code, reward_code=reward_code
+    ).first()
+    if purchased:
+        return jsonify({"message": "Reward already unlocked for this student"}), 200
+
+    
+    purchased = PurchasedReward(
+        student_code=student_code,
+        reward_code=reward.reward_code,
+        id_story=reward.id_story,
+        coins_required=reward.coins_required,
+        reward_image=reward.reward_image
+    )
+    db.session.add(purchased)
+    db.session.commit()
+
+    return jsonify({"message": f"Reward {reward_code} unlocked successfully for this student"}), 200
+
+
+@story_bp.route('/studentrewards/<string:student_code>', methods=['GET'])
+def student_rewards(student_code):
+    all_rewards = StoryReward.query.all()
+    purchased = PurchasedReward.query.filter_by(student_code=student_code).all()
+    purchased_codes = [r.reward_code for r in purchased]
+   
+
+    result = []
+    for reward in all_rewards:
+        reward_status = "unlocked" if reward.reward_code in purchased_codes else "locked"
+        story = Story.query.filter_by(id_story=reward.id_story).first()
+        result.append({
+            "reward_code": reward.reward_code,
+            "coins_required": reward.coins_required,
+            "story_code": story.story_code if story else None,
+            "reward_image": reward.reward_image,
+            "status": reward_status
+        })
+    return jsonify(result)
+
+# *********************************** Translation ***************************************
+
+@story_bp.route("/translations", methods=["POST"])
+def save_translation():
+    try:
+        data = request.get_json()
+
+        id_reference = data.get("id_reference")
+        table_name = data.get("table_name")
+        column_name = data.get("column_name")
+        lang = data.get("lang")
+        translation_text = data.get("translation")
+
+        if not id_reference or not table_name or not column_name or not lang or not translation_text:
+            return jsonify({"error": "id_reference, table_name, column_name, lang, and translation are required"}), 400
+
+        # Check if translation already exists
+        existing = Translation.query.filter_by(
+            id_reference=id_reference,
+            table_name=table_name,
+            column_name=column_name,
+            lang=lang
+        ).first()
+
+        if existing:
+            existing.translation = translation_text
+            existing.updated_at = datetime.utcnow()
+            status = "updated"
+        else:
+            new_translation = Translation(
+                id_reference=id_reference,
+                table_name=table_name,
+                column_name=column_name,
+                lang=lang,
+                translation=translation_text
+            )
+            db.session.add(new_translation)
+            status = "saved"
+
+        db.session.commit()
+
+        return jsonify({
+            "message": f"Translation {status} successfully",
+            "data": {
+                "id_reference": id_reference,
+                "table_name": table_name,
+                "column_name": column_name,
+                "lang": lang,
+                "translation": translation_text
+            }
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
         return jsonify({"error": str(e)}), 500
