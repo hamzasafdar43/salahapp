@@ -67,28 +67,32 @@ def save_story():
     data = request.get_json()
     story_code = generate_story_code()
 
+    # Create story
     story = Story(
         story_code=story_code,
         title=data["title"],
-        sub_title=data["sub_title"]
+        sub_title=data.get("sub_title", "")
     )
     db.session.add(story)
+    db.session.flush()  # <-- flush to get story.id_story
 
+    # Add content pages
     pages = data.get("pages_content", [])
     for page in pages:
         content = StoryContent(
             content_code=generate_content_code(),
             page_content=page,
-            story_code=story_code
+            story_id=story.id_story  # <-- use id_story (primary key)
         )
         db.session.add(content)
 
-    db.session.commit()
+    db.session.commit()  # commit all together
 
     return jsonify({
         "message": "Story saved successfully",
         "story_code": story_code
     }), 201
+
 
 
 @story_bp.route('/unlock_story', methods=['POST'])
@@ -133,6 +137,32 @@ def launch_story(story_code):
     })
 
 
+# @story_bp.route("/stories", methods=["GET"])
+# def get_all_stories():
+#     stories = Story.query.all()
+#     response = []
+
+#     for story in stories:
+#         pages = []
+#         for content in story.contents:
+#             if isinstance(content.page_content, list):
+#                 pages.extend(content.page_content)
+#             else:
+#                 pages.append(content.page_content)
+
+#         story_data = {
+#             "story_code": story.story_code,
+#             "title": story.title,
+#             "sub_title": story.sub_title,
+#             "status":story.status,
+#             "story_lunch" : story.launch_text,
+#             "pages_content": pages
+#         }
+#         response.append(story_data)
+#     order_story = ["Yunus (AS)" , "Salih (AS)" , "Adam (AS)"  ,"Nuh (AS)" , "Ibrahim (AS)" , "Musa (AS)" , "Dawud (AS)" , "Sulaiman (AS)" , "Isa (AS)" , "Muhammad (SAW)"]
+#     return jsonify(response), 200
+
+
 @story_bp.route("/stories", methods=["GET"])
 def get_all_stories():
     stories = Story.query.all()
@@ -150,13 +180,23 @@ def get_all_stories():
             "story_code": story.story_code,
             "title": story.title,
             "sub_title": story.sub_title,
-            "status":story.status,
-            "story_lunch" : story.launch_text,
+            "status": story.status,
+            "story_lunch": story.launch_text,
             "pages_content": pages
         }
         response.append(story_data)
 
-    return jsonify(response), 200
+    # Define the order you want
+    order_story = ["Yunus (AS)", "Salih (AS)", "Adam (AS)", "Nuh (AS)", "Ibrahim (AS)",
+                   "Musa (AS)", "Dawud (AS)", "Sulaiman (AS)", "Isa (AS)", "Muhammad (SAW)"]
+
+    # Sort response based on the index of the title in order_story
+    response_sorted = sorted(
+        response,
+        key=lambda x: order_story.index(x["title"]) if x["title"] in order_story else len(order_story)
+    )
+
+    return jsonify(response_sorted), 200
 
 
 # *********************************** Story Quiz ***************************************
